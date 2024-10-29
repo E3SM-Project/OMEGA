@@ -43,6 +43,8 @@ KOKKOS_INLINE_FUNCTION constexpr Real operator""_Real(long double x) {
 using MemSpace = Kokkos::CudaSpace;
 #elif OMEGA_ENABLE_HIP
 using MemSpace = Kokkos::Experimental::HIPSpace;
+#elif OMEGA_ENABLE_SYCL
+using MemSpace = Kokkos::Experimental::SYCLDeviceUSMSpace;
 #elif OMEGA_ENABLE_OPENMP
 using MemSpace = Kokkos::HostSpace;
 #elif OMEGA_ENABLE_SERIAL
