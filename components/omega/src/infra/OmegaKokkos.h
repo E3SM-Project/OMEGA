@@ -73,6 +73,12 @@ template <class T> struct ArrayRank {
 using ExecSpace     = MemSpace::execution_space;
 using HostExecSpace = HostMemSpace::execution_space;
 
+using TeamPolicy      = Kokkos::TeamPolicy<ExecSpace>;
+using TeamMember      = TeamPolicy::member_type;
+using ScratchMemSpace = ExecSpace::scratch_memory_space;
+using Kokkos::MemoryUnmanaged;
+using Kokkos::TeamThreadRange;
+
 template <typename V>
 auto createHostMirrorCopy(const V &view)
     -> Kokkos::View<typename V::data_type, HostMemLayout, HostMemSpace> {
