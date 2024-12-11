@@ -143,7 +143,7 @@ in the following equation for the modified main diagonal
 $$
 \hat{b}_i = h_i
              + g_{i - 1} - \frac{g_{i-1}^2}{h_{i - 1} + g_{i - 2} + g_{i - 1}}
-             + g_{i + 1} - \frac{g_{i+1}^2}{h_{i + 1} + g_{i} + g_{i + 1}}.
+             + g_i - \frac{g_i^2}{h_{i + 1} + g_{i} + g_{i + 1}}.
 $$
 Using this expression can potentially result in catastrophic cancellation errors and overflows if
 $g_{i - 1}$ or $g_{i + 1}$ are very large.
@@ -151,9 +151,9 @@ To improve its stability, this expression can be rewritten as
 $$
 \hat{b}_i = h_i
              + h_{i - 1} \frac{g_{i - 1}}{h_{i - 1} + g_{i - 2} + g_{i - 1}}
-             + h_{i + 1} \frac{g_{i + 1}}{h_{i + 1} + g_i + g_{i + 1}}
-             + g_{i - 2} \frac{g_{i - 1}}{h_{i - 1} + g_{i - 2} + g_{i - 1}}
-             + g_i \frac{g_{i + 1}}{h_{i + 1} + g_i + g_{i + 1}}.
+             + h_{i + 1} \frac{g_i}{h_{i + 1} + g_i + g_{i + 1}}
+             + g_{i - 1} \frac{g_{i - 2}}{h_{i - 1} + g_{i - 2} + g_{i - 1}}
+             + g_{i + 1} \frac{g_i}{h_{i + 1} + g_i + g_{i + 1}}.
 $$
 This equation can be shown to be in the form
 $$
@@ -164,8 +164,8 @@ $$
 \begin{aligned}
 \hat{h}_i &= h_i
              + h_{i - 1} \frac{g_{i - 1}}{h_{i - 1} + g_{i - 2} + g_{i - 1}}
-             + h_{i + 1} \frac{g_{i + 1}}{h_{i + 1} + g_i + g_{i + 1}}, \\
-\hat{g}_i &= g_i \frac{g_{i + 1}}{h_{i + 1} + g_i + g_{i + 1}}.
+             + h_{i + 1} \frac{g_i}{h_{i + 1} + g_i + g_{i + 1}}, \\
+\hat{g}_i &= g_{i + 1} \frac{g_i}{h_{i + 1} + g_i + g_{i + 1}}.
 \end{aligned}
 $$
 These two equations form the basis of stable (parallel) cyclic reduction for diffusion problems.
