@@ -435,8 +435,12 @@ macro(init_standalone_build)
   elseif("${OMEGA_ARCH}" STREQUAL "SYCL")
     set(CMAKE_CXX_COMPILER ${OMEGA_CXX_COMPILER})
 
+    # add flags from upstream-E3SM
     if(SYCL_FLAGS)
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SYCL_FLAGS}")
+    endif()
+    if(OMEGA_SYCL_EXE_LINKER_FLAGS)
+      set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OMEGA_SYCL_EXE_LINKER_FLAGS}")
     endif()
 
   else()
