@@ -301,7 +301,7 @@ add_omega_test(
     TEND_PLANE_SINGLE_PRECISION_TEST
     testTendencyTermsPlaneSinglePrecision.exe
     ocn/TendencyTermsTest.cpp
-    "-n 8;--cpu-bind=cores"
+    "-n 8;"
     single_precision
 )
 
