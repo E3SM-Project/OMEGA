@@ -42,8 +42,11 @@ class IOStream {
    IO::Mode Mode;        ///< mode (read or write)
    bool ReducePrecision; ///< flag to use 32-bit precision for 64-bit floats
    Alarm MyAlarm;        ///< time mgr alarm for read/write
+   Alarm FileAlarm;      ///< time mgr alarm for opening a new file
    bool OnStartup;       ///< flag to read/write on model startup
    bool OnShutdown;      ///< flag to read/write on model shutdown
+   bool Multiframe;      ///< flag for multiple frames/time slices in file
+   int Frame;            ///< current frame/slice for multi-frame stream
 
    /// A pointer file is used if we wish OMEGA to read the name of the file
    /// from another file. This is useful for writing the name of a restart
@@ -157,7 +160,7 @@ class IOStream {
    ///    $s = seconds part of simulation time stamp
    static std::string buildFilename(
        const std::string &FilenameTemplate, ///< [in] template string for name
-       const Clock *ModelClock              ///< [in] model clock for sim time
+       const TimeInstant &FileTime          ///< [in] time to use in filename
    );
 
    /// Sets ReducePrecision flag based on an input string, performing string

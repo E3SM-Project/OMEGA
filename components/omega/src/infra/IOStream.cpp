@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <any>
 #include <cctype>
+#include <cmath>
 #include <ctime>
 #include <fstream>
 #include <iostream>
@@ -41,7 +42,7 @@ std::map<std::string, std::shared_ptr<IOStream>> IOStream::AllStreams;
 int IOStream::init(Clock *&ModelClock //< [inout] Omega model clock
 ) {
 
-   int Err = 0; // default return code
+   int Err = Success;
 
    // Retrieve the model configuration and get the streams sub-config
    Config *OmegaConfig = Config::getOmegaConfig();
@@ -49,7 +50,7 @@ int IOStream::init(Clock *&ModelClock //< [inout] Omega model clock
    Err = OmegaConfig->get(StreamsCfgAll);
    if (Err != 0) { // could not find the streams configuration
       LOG_ERROR("Could not find Streams configuration in Omega input file");
-      return Err;
+      return Fail;
    }
 
    // Loop over all streams in the subconfiguration and create them
@@ -61,14 +62,14 @@ int IOStream::init(Clock *&ModelClock //< [inout] Omega model clock
       Err = StreamsCfgAll.get(StreamCfg);
       if (Err != 0) {
          LOG_ERROR("Error retrieving configuration for stream {}", StreamName);
-         return Err;
+         return Fail;
       }
 
       // Call the create routine to create the stream
       Err = create(StreamName, StreamCfg, ModelClock);
       if (Err != 0) {
          LOG_ERROR("Error creating stream {}", StreamName);
-         return Err;
+         return Fail;
       }
 
    } // end loop over all streams
@@ -290,7 +291,7 @@ int IOStream::writeAll(
     const Clock *ModelClock // [in] Model clock needed for time stamps
 ) {
 
-   int Err = 0; // accumulated error for return value
+   int Err = Success; // accumulated error for return value
 
    // Loop over all streams and call write function for any write streams
    for (auto Iter = AllStreams.begin(); Iter != AllStreams.end(); Iter++) {
@@ -348,9 +349,8 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
    // Check whether the stream already exists
    if (AllStreams.find(StreamName) != AllStreams.end()) {
       // Stream already exists, return error
-      Err = 1;
       LOG_ERROR("Attempt to create stream {} that already exists", StreamName);
-      return Err;
+      return Fail;
    }
 
    // Create a new pointer and set name
@@ -363,8 +363,7 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
    NewStream->Mode = IO::ModeFromString(StreamMode);
    if ((Err != 0) or (NewStream->Mode == IO::ModeUnknown)) {
       LOG_ERROR("Bad or non-existent Mode for stream {}", StreamName);
-      Err = 2;
-      return Err;
+      return Fail;
    }
 
    // Set file name
@@ -372,7 +371,7 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
    Err = StreamConfig.get("UsePointerFile", NewStream->UsePointer);
    if (Err != 0) {
       LOG_ERROR("UsePointerFile flag not found in stream {}", StreamName);
-      return Err;
+      return Fail;
    }
    // If the stream uses a pointer file, get the pointer filename
    if (NewStream->UsePointer) {
@@ -380,7 +379,7 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
       Err = StreamConfig.get("PointerFilename", NewStream->PtrFilename);
       if (Err != 0) { // pointer filename not found
          LOG_ERROR("Pointer filename not found for stream {}", StreamName);
-         return Err;
+         return Fail;
       }
    }
 
@@ -394,7 +393,7 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
       if (Err != 0) {
          LOG_ERROR("Error getting Filename for stream {} from Config",
                    StreamName);
-         return Err;
+         return Fail;
       }
       // Check to see if filename is a template and needs to be constructed
       // later with time information
@@ -438,18 +437,17 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
    Err = StreamConfig.get("Freq", IOFreq);
    if (Err != 0) {
       LOG_ERROR("Frequency missing for stream {}", StreamName);
-      return Err;
+      return Fail;
    }
    if (IOFreq < 1) {
       LOG_ERROR("Invalid frequency {} for IO stream {} ", StreamName);
-      Err = 3;
-      return Err;
+      return Fail;
    }
    std::string IOFreqUnits;
    Err = StreamConfig.get("FreqUnits", IOFreqUnits);
    if (Err != 0) {
       LOG_ERROR("FreqUnits missing for stream {}", StreamName);
-      return Err;
+      return Fail;
    }
 
    // convert string to lower case for easier comparison
@@ -461,49 +459,23 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
    NewStream->OnStartup  = false;
    NewStream->OnShutdown = false;
 
-   if (IOFreqUnits == "years") {
+   // Convert to standard freq units if possible
+   TimeUnits IOFrqUnits = TimeUnitsFromString(IOFreqUnits);
+   if (IOFrqUnits != TimeUnits::None) { // standard time units cases
 
-      TimeInterval AlarmInt(IOFreq, TimeUnits::Years);
+      TimeInterval AlarmInt(IOFreq, IOFrqUnits);
       NewStream->MyAlarm = Alarm(AlarmName, AlarmInt, ClockStart);
       HasAlarm           = true;
 
-   } else if (IOFreqUnits == "months") {
-
-      TimeInterval AlarmInt(IOFreq, TimeUnits::Months);
-      NewStream->MyAlarm = Alarm(AlarmName, AlarmInt, ClockStart);
-      HasAlarm           = true;
-
-   } else if (IOFreqUnits == "days") {
-
-      TimeInterval AlarmInt(IOFreq, TimeUnits::Days);
-      NewStream->MyAlarm = Alarm(AlarmName, AlarmInt, ClockStart);
-      HasAlarm           = true;
-
-   } else if (IOFreqUnits == "hours") {
-
-      TimeInterval AlarmInt(IOFreq, TimeUnits::Hours);
-      NewStream->MyAlarm = Alarm(AlarmName, AlarmInt, ClockStart);
-      HasAlarm           = true;
-
-   } else if (IOFreqUnits == "minutes") {
-
-      TimeInterval AlarmInt(IOFreq, TimeUnits::Minutes);
-      NewStream->MyAlarm = Alarm(AlarmName, AlarmInt, ClockStart);
-      HasAlarm           = true;
-
-   } else if (IOFreqUnits == "seconds") {
-
-      TimeInterval AlarmInt(IOFreq, TimeUnits::Seconds);
-      NewStream->MyAlarm = Alarm(AlarmName, AlarmInt, ClockStart);
-      HasAlarm           = true;
-
-   } else if (IOFreqUnits == "onstartup") {
+   } else if (IOFreqUnits == "onstartup") { // special startup case
 
       NewStream->OnStartup = true;
 
-   } else if (IOFreqUnits == "onshutdown") {
+   } else if (IOFreqUnits == "onshutdown") { // special shutdown case
+
       NewStream->OnShutdown = true;
 
+      // single time instant case
    } else if (IOFreqUnits == "attime" or IOFreqUnits == "ontime" or
               IOFreqUnits == "time" or IOFreqUnits == "timeinstant") {
 
@@ -519,22 +491,20 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
          LOG_ERROR("Stream {} requests a one-time read/write but StartTime"
                    "not provided",
                    StreamName);
-         return Err;
+         return Fail;
       }
 
-   } else if (IOFreqUnits == "never") {
+   } else if (IOFreqUnits == "never") { // special never case
 
       LOG_WARN("Stream {} has IO frequency of never and will be skipped",
                StreamName);
-      Err = 0;
-      return Err;
+      return Success;
 
-   } else {
+   } else { // default error
 
       if (!NewStream->OnStartup and !NewStream->OnShutdown) {
          LOG_ERROR("Unknown IOFreqUnits option for stream {}", StreamName);
-         Err = 4;
-         return Err;
+         return Fail;
       }
    }
    // If an alarm is set, attach it to the model clock
@@ -543,9 +513,80 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
       if (Err != 0) {
          LOG_ERROR("Error attaching alarm to model clock for stream {}",
                    StreamName);
-         return Err;
+         return Fail;
       }
    }
+
+   // Check the file frequency to see if there will be multiple records or
+   // time slices per file
+   NewStream->Multiframe = false;
+   int FileFreq          = 0;
+   std::string FileUnitStr;
+
+   int Err1            = StreamConfig.get("FileFreq", FileFreq);
+   int Err2            = StreamConfig.get("FileFreqUnits", FileUnitStr);
+   TimeUnits FileUnits = TimeUnitsFromString(FileUnitStr);
+
+   // Various error checks
+   if (Err1 == 0 or Err2 == 0) {
+      // file freq variable present, assume Multiframe and check validity
+      NewStream->Multiframe = true;
+
+      if (Err1 != 0) {
+         LOG_CRITICAL("File frequency units provided but file freq missing"
+                      "for stream {}",
+                      StreamName);
+         return Fail;
+      }
+      if (Err2 != 0) {
+         LOG_CRITICAL("File frequency provided by file freq units missing"
+                      "for stream {}",
+                      StreamName);
+         return Fail;
+      }
+      if (FileFreq < 1) {
+         LOG_ERROR("Invalid file frequency {} for IO stream {} ", StreamName);
+         return Fail;
+      }
+      if (FileUnits == TimeUnits::None) {
+         LOG_CRITICAL("Bad units for file frequency in IO stream {} ",
+                      StreamName);
+         return Fail;
+      }
+      if (NewStream->Mode == IO::ModeRead) {
+         LOG_CRITICAL("Multiple time slices currently not supported for input "
+                      "stream {} ",
+                      StreamName);
+         return Fail;
+      }
+   }
+
+   // Create and attach alarm for file frequency if needed
+   if (NewStream->Multiframe) {
+
+      // Create time interval for files and check compatibility
+      // with data IO frequency
+      TimeInterval FileInt(FileFreq, FileUnits);
+      const TimeInterval *IOInt = NewStream->MyAlarm.getInterval();
+      if (FileInt < *IOInt) {
+         LOG_CRITICAL(
+             "File IO interval shorter than data IO interval for stream {}",
+             StreamName);
+         return Fail;
+      }
+
+      // create and attach alarm
+      std::string FileAlarmName = StreamName + "File";
+      NewStream->FileAlarm      = Alarm(FileAlarmName, FileInt, ClockStart);
+      Err = ModelClock->attachAlarm(&(NewStream->FileAlarm));
+      if (Err != 0) {
+         LOG_ERROR("Error attaching file alarm to model clock for stream {}",
+                   StreamName);
+         return Fail;
+      }
+
+      // Check for
+   } // end multiframe
 
    // Use a start and end time to define an interval in which stream is active
    Err = StreamConfig.get("UseStartEnd", NewStream->UseStartEnd);
@@ -562,13 +603,13 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
       if (Err != 0) {
          LOG_ERROR("Stream {} requests UseStartEnd but no start time provided",
                    StreamName);
-         return Err;
+         return Fail;
       }
       Err = StreamConfig.get("EndTime", EndTimeStr);
       if (Err != 0) {
          LOG_ERROR("Stream {} requests UseStartEnd but no end time provided",
                    StreamName);
-         return Err;
+         return Fail;
       }
       TimeInstant Start(StartTimeStr);
       TimeInstant End(EndTimeStr);
@@ -580,13 +621,13 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
       if (Err != 0) {
          LOG_ERROR("Error attaching start alarm to model clock for stream {}",
                    StreamName);
-         return Err;
+         return Fail;
       }
       Err = ModelClock->attachAlarm(&(NewStream->EndAlarm));
       if (Err != 0) {
          LOG_ERROR("Error attaching end alarm to model clock for stream {}",
                    StreamName);
-         return Err;
+         return Fail;
       }
    } // endif UseStartEnd
 
@@ -596,7 +637,7 @@ int IOStream::create(const std::string &StreamName, //< [in] name of stream
    Err = StreamConfig.get("Contents", FieldContents);
    if (Err != 0) {
       LOG_ERROR("Can not find contents for stream {}", StreamName);
-      return Err;
+      return Fail;
    }
 
    // If this is a write stream, add the time field for CF compliant
@@ -647,8 +688,9 @@ int IOStream::defineAllDims(
       I4 Length = IDim->second->getLengthGlobal();
       I4 DimID;
 
-      // For input files, we read the DimID from the file
-      if (Mode == IO::ModeRead) {
+      // For input files or additional frames of a multi-frame file,
+      // we read the DimID from the file
+      if (Mode == IO::ModeRead or Frame > 0) {
          // skip reading the unlimited time dimension
          if (DimName == "time")
             continue;
@@ -671,19 +713,18 @@ int IOStream::defineAllDims(
          if (InLength != Length) {
             LOG_ERROR("Inconsistent length for dimension {} in input stream {}",
                       DimName, Name);
-            Err = 3;
-            return Err;
+            return Fail;
          }
       } // end read case
 
       // For output files, we need to define the dimension
-      if (Mode == IO::ModeWrite) {
+      if (Mode == IO::ModeWrite and Frame < 1) {
 
          Err = IO::defineDim(FileID, DimName, Length, DimID);
          if (Err != 0) {
             LOG_ERROR("Error defining dimension {} for output stream {}",
                       DimName, Name);
-            return Err;
+            return Fail;
          }
       } // end write case
 
@@ -750,15 +791,14 @@ int IOStream::computeDecomp(
    int NDims               = FieldPtr->getNumDims();
    if (NDims < 0) {
       LOG_ERROR("Invalid number of dimensions for Field {}", FieldName);
-      Err = 1;
-      return Err;
+      return Fail;
    }
 
    std::vector<std::string> DimNames(NDims);
    Err = FieldPtr->getDimNames(DimNames);
    if (Err != 0) {
       LOG_ERROR("Error retrieving dimension names for Field {}", FieldName);
-      return Err;
+      return Fail;
    }
 
    // Get dimension and size information for each dimension
@@ -852,7 +892,7 @@ int IOStream::computeDecomp(
    if (Err != 0) {
       LOG_ERROR("Error creating decomp for field {} in stream {}", FieldName,
                 Name);
-      return Err;
+      return Fail;
    }
 
    return Err;
@@ -866,7 +906,7 @@ int IOStream::writeFieldMeta(
     int FileID,                  // [in] id assigned to open file
     int FieldID                  // [in] id assigned to the field
 ) {
-   int Err = 0; // default return code
+   int Err = Success; // default return code
 
    // Get the field metadata entries
    std::shared_ptr<Metadata> AllMeta = Field::getFieldMetadata(FieldName);
@@ -916,15 +956,14 @@ int IOStream::writeFieldMeta(
          Err = IO::writeMeta(MetaName, MetaValChar, FileID, FieldID);
 
       } else { // unknown data type
-         Err = 2;
          LOG_ERROR("Unknown data type for Metadata {} in Field {}", MetaName,
                    FieldName);
-         return Err;
+         return Fail;
       }
       if (Err != 0) {
          LOG_ERROR("Error trying to write Metadata {} for Field {}", MetaName,
                    FieldName);
-         return Err;
+         return Fail;
       }
 
    } // end loop over metadata
@@ -954,8 +993,7 @@ int IOStream::writeFieldData(
    int NDims             = FieldPtr->getNumDims();
    if (NDims < 0) {
       LOG_ERROR("Invalid number of dimensions for Field {}", FieldName);
-      Err = 2;
-      return Err;
+      return Fail;
    }
 
    // Create the decomposition needed for parallel I/O or if not decomposed
@@ -968,7 +1006,7 @@ int IOStream::writeFieldData(
       Err = computeDecomp(FieldPtr, MyDecompID, LocSize, DimLengths);
       if (Err != 0) {
          LOG_ERROR("Error computing decomposition for Field {}", FieldName);
-         return Err;
+         return Fail;
       }
    } else { // Get dimension lengths
       IOStream::getFieldSize(FieldPtr, LocSize, DimLengths);
@@ -1008,8 +1046,7 @@ int IOStream::writeFieldData(
       Err = FieldPtr->getMetadata("FillValue", FillValI4);
       if (Err != 0) {
          LOG_ERROR("Error retrieving FillValue for Field {}", FieldName);
-         Err = 4;
-         return Err;
+         return Fail;
       }
       FillValPtr = &FillValI4;
 
@@ -1153,8 +1190,7 @@ int IOStream::writeFieldData(
       Err = FieldPtr->getMetadata("FillValue", FillValI8);
       if (Err != 0) {
          LOG_ERROR("Error retrieving FillValue for Field {}", FieldName);
-         Err = 4;
-         return Err;
+         return Fail;
       }
       FillValPtr = &FillValI8;
 
@@ -1297,8 +1333,7 @@ int IOStream::writeFieldData(
       Err = FieldPtr->getMetadata("FillValue", FillValR4);
       if (Err != 0) {
          LOG_ERROR("Error retrieving FillValue for Field {}", FieldName);
-         Err = 4;
-         return Err;
+         return Fail;
       }
       FillValPtr = &FillValR4;
 
@@ -1439,8 +1474,7 @@ int IOStream::writeFieldData(
       Err = FieldPtr->getMetadata("FillValue", FillValR8);
       if (Err != 0) {
          LOG_ERROR("Error retrieving FillValue for Field {}", FieldName);
-         Err = 4;
-         return Err;
+         return Fail;
       }
       DataR8.resize(LocSize);
       if (ReducePrecision) {
@@ -1595,27 +1629,14 @@ int IOStream::writeFieldData(
 
    } // end switch data type
 
-   // If this variable has an unlimited time dimension, set the frame/record
-   // number
-   if (IsTimeDependent) {
-      // currently always 0 but will be updated once support for multiple
-      // records is added
-      int Frame = 0;
-      Err       = PIOc_setframe(FileID, FieldID, Frame);
-      if (Err != 0) {
-         LOG_ERROR("Error setting frame for unlimited time");
-         return Err;
-      }
-   }
-
    // Write the data
    if (IsDistributed) {
       Err = OMEGA::IO::writeArray(DataPtr, LocSize, FillValPtr, FileID,
-                                  MyDecompID, FieldID);
+                                  MyDecompID, FieldID, Frame);
       if (Err != 0) {
          LOG_ERROR("Error writing data array for field {} in stream {}",
                    FieldName, Name);
-         return Err;
+         return Fail;
       }
 
       // Clean up the decomp
@@ -1623,16 +1644,16 @@ int IOStream::writeFieldData(
       if (Err != 0) {
          LOG_ERROR("Error destroying decomp for field {} in stream {}",
                    FieldName, Name);
-         return Err;
+         return Fail;
       }
 
    } else {
-      Err = OMEGA::IO::writeNDVar(DataPtr, FileID, FieldID);
+      Err = OMEGA::IO::writeNDVar(DataPtr, FileID, FieldID, Frame, &DimLengths);
       if (Err != 0) {
          LOG_ERROR(
              "Error writing non-distributed data for field {} in stream {}",
              FieldName, Name);
-         return Err;
+         return Fail;
       }
    }
 
@@ -1665,8 +1686,7 @@ int IOStream::readFieldData(
    int NDims                = FieldPtr->getNumDims();
    if (NDims < 0) {
       LOG_ERROR("Invalid number of dimensions for Field {}", FieldName);
-      Err = 1;
-      return Err;
+      return Fail;
    }
 
    // Create the decomposition needed for parallel I/O or if not decomposed
@@ -1679,7 +1699,7 @@ int IOStream::readFieldData(
       Err = computeDecomp(FieldPtr, DecompID, LocSize, DimLengths);
       if (Err != 0) {
          LOG_ERROR("Error computing decomposition for Field {}", FieldName);
-         return Err;
+         return Fail;
       }
    } else { // Get dimension lengths
       IOStream::getFieldSize(FieldPtr, LocSize, DimLengths);
@@ -1731,7 +1751,7 @@ int IOStream::readFieldData(
       if (Err != 0) { // still not found - return error
          LOG_ERROR("Error reading data array for {} in stream {}", FieldName,
                    Name);
-         return Err;
+         return Fail;
       }
    }
 
@@ -2289,8 +2309,7 @@ int IOStream::readFieldData(
    default:
       LOG_ERROR("Invalid data type while reading field {} for stream {}",
                 FieldName, Name);
-      Err = 3;
-      return Err;
+      return Fail;
       break;
 
    } // end switch data type
@@ -2300,7 +2319,7 @@ int IOStream::readFieldData(
    if (Err != 0) {
       LOG_ERROR("Error destroying decomp after reading field {} in stream {}",
                 FieldName, Name);
-      return Err;
+      return Fail;
    }
 
    return Err;
@@ -2355,7 +2374,7 @@ int IOStream::readStream(
       PtrFile.close();
    } else if (FilenameIsTemplate) {
       // create file name from template
-      InFileName = buildFilename(Filename, ModelClock);
+      InFileName = buildFilename(Filename, SimTime);
    } else {
       InFileName = Filename;
    }
@@ -2469,7 +2488,6 @@ int IOStream::writeStream(
    // First check that this is an output stream
    if (Mode != IO::ModeWrite) {
       LOG_ERROR("IOStream write: cannot write stream defined as input stream");
-      Err = 1;
       return Fail;
    }
 
@@ -2490,6 +2508,37 @@ int IOStream::writeStream(
    TimeInstant SimTime    = ModelClock->getCurrentTime();
    std::string SimTimeStr = SimTime.getString(4, 0, "_");
 
+   // Determine whether we need to append or create a new file and which
+   // time to use for filename. For streams that do not write multiple frames,
+   // we default to the current time and use the stream's default ExistAction.
+   // For streams that need to write multiple frames or time slices per file,
+   // there are two cases. If it is time to open a new file, we use the
+   // current time but must modify the file existence behavior to create a new
+   // file. If we are writing a new frame/slice to an existing file, we keep
+   // the default Append option for file existence, but the filename is
+   // associated with the time the old file was created which should be the
+   // last file alarm time. Is this case, we also need to determine which
+   // frame/slice we are writing.
+   Frame                   = 0;
+   TimeInstant FileTime    = ModelClock->getCurrentTime();
+   IO::IfExists FileExists = ExistAction; // use stream default
+   if (Multiframe) {
+      if (FileAlarm.isRinging()) { // time for a new file
+         FileExists = IO::IfExists::Replace;
+         // keep current time as FileTime
+      } else {
+         FileTime = *(FileAlarm.getRingTimePrev());
+         // keep default ExistAction which should be Append
+         const TimeInterval *DataInterval = MyAlarm.getInterval();
+         const TimeInterval FileInterval  = (SimTime - FileTime);
+         R8 DataIntR8;
+         R8 FileIntR8;
+         Err   = DataInterval->get(DataIntR8, TimeUnits::Seconds);
+         Err   = FileInterval.get(FileIntR8, TimeUnits::Seconds);
+         Frame = std::round(FileIntR8 / DataIntR8);
+      }
+   }
+
    // Update the time field with elapsed time since simulation start
    TimeInstant StartTime    = ModelClock->getStartTime();
    TimeInterval ElapsedTime = SimTime - StartTime;
@@ -2504,12 +2553,14 @@ int IOStream::writeStream(
       OnStartup = false;
    if (MyAlarm.isRinging())
       MyAlarm.reset(SimTime);
+   if (FileAlarm.isRinging())
+      FileAlarm.reset(SimTime);
 
    // Create filename
    std::string OutFileName;
    if (FilenameIsTemplate) {
       // create file name from template
-      OutFileName = buildFilename(Filename, ModelClock);
+      OutFileName = buildFilename(Filename, FileTime);
    } else {
       OutFileName = Filename;
    }
@@ -2517,7 +2568,7 @@ int IOStream::writeStream(
    // Open output file
    int OutFileID;
    Err = OMEGA::IO::openFile(OutFileID, OutFileName, Mode, IO::FmtDefault,
-                             ExistAction);
+                             FileExists);
    if (Err != 0) {
       LOG_ERROR("IOStream::write: error opening file {} for output",
                 OutFileName);
@@ -2525,25 +2576,44 @@ int IOStream::writeStream(
    }
 
    // Write Metadata for global metadata (Code and Simulation)
-   // Always add current simulation time to Simulation metadata
-   Err = writeFieldMeta(CodeMeta, OutFileID, IO::GlobalID);
-   if (Err != 0) {
-      LOG_ERROR("Error writing Code Metadata to file {}", OutFileName);
-      return Fail;
+   // Only needs to be written for a new file
+   if (Frame < 1) {
+      Err = writeFieldMeta(CodeMeta, OutFileID, IO::GlobalID);
+      if (Err != 0) {
+         LOG_ERROR("Error writing Code Metadata to file {}", OutFileName);
+         return Fail;
+      }
+      Err = writeFieldMeta(SimMeta, OutFileID, IO::GlobalID);
+      if (Err != 0) {
+         LOG_ERROR("Error writing Simulation Metadata to file {}", OutFileName);
+         return Fail;
+      }
    }
-   std::shared_ptr<Field> SimField = Field::get(SimMeta);
-   // Add the simulation time - if it was added previously, remove and
-   // re-add the current time
-   if (SimField->hasMetadata("SimulationTime"))
-      Err = SimField->removeMetadata("SimulationTime");
-   Err = SimField->addMetadata("SimulationTime", SimTimeStr);
+
+   // Create and write a field for any global data that is file or time
+   // specific.
+   std::shared_ptr<Field> FileField = Field::create("FileField");
+   // Add the current simulation time
+   std::string SimTimeName = "SimulationTime";
+   Err                     = FileField->addMetadata(SimTimeName, SimTimeStr);
    if (Err != 0) {
       LOG_ERROR("Error adding current sim time to output {}", OutFileName);
       return Fail;
    }
-   Err = writeFieldMeta(SimMeta, OutFileID, IO::GlobalID);
+   // If it is a multi-frame file, add the time for this frame
+   if (Multiframe) {
+      SimTimeName = SimTimeName + std::to_string(Frame);
+      Err         = FileField->addMetadata(SimTimeName, SimTimeStr);
+   }
+   // Write and then destroy temporary field
+   Err = writeFieldMeta("FileField", OutFileID, IO::GlobalID);
    if (Err != 0) {
-      LOG_ERROR("Error writing Simulation Metadata to file {}", OutFileName);
+      LOG_ERROR("Error writing File Metadata to file {}", OutFileName);
+      return Fail;
+   }
+   Err = Field::destroy("FileField");
+   if (Err != 0) {
+      LOG_ERROR("Error destroying File field for file {}", OutFileName);
       return Fail;
    }
 
@@ -2605,11 +2675,13 @@ int IOStream::writeStream(
       FieldIDs[FieldName] = FieldID;
 
       // Now we can write the field metadata
-      Err = writeFieldMeta(FieldName, OutFileID, FieldID);
-      if (Err != 0) {
-         LOG_ERROR("Error writing field metadata for field {} in stream {}",
-                   FieldName, Name);
-         return Fail;
+      if (Frame < 1) { // only write if it's the first time
+         Err = writeFieldMeta(FieldName, OutFileID, FieldID);
+         if (Err != 0) {
+            LOG_ERROR("Error writing field metadata for field {} in stream {}",
+                      FieldName, Name);
+            return Fail;
+         }
       }
    }
 
@@ -2725,7 +2797,7 @@ IO::IODataType IOStream::getFieldIOType(
 //    $s = seconds part of simulation time stamp
 std::string IOStream::buildFilename(
     const std::string &FilenameTemplate, // [in] template string for name
-    const Clock *ModelClock              // [in] model clock for sim time
+    const TimeInstant &FileTime          // [in] sim time to use for filename
 ) {
 
    // Start with input template
@@ -2754,9 +2826,6 @@ std::string IOStream::buildFilename(
       Outfile.replace(Pos, 9, WalltimeStr);
    }
 
-   // For remaining options, we will need the simulation time
-   TimeInstant SimTime = ModelClock->getCurrentTime();
-
    // For many template options we also need the components of the current
    // sim time so we extract them here
    I8 IYear;
@@ -2767,7 +2836,8 @@ std::string IOStream::buildFilename(
    I8 ISecW;
    I8 ISecN;
    I8 ISecD;
-   int Err = SimTime.get(IYear, IMonth, IDay, IHour, IMin, ISecW, ISecN, ISecD);
+   int Err =
+       FileTime.get(IYear, IMonth, IDay, IHour, IMin, ISecW, ISecN, ISecD);
    if (Err != 0) {
       LOG_ERROR("Error getting components of simulation time for filename");
    }
@@ -2793,7 +2863,7 @@ std::string IOStream::buildFilename(
       int YearLength         = SYear.length();
       int MinWidth           = 4;
       int YearWidth          = std::max(YearLength, MinWidth);
-      std::string SimTimeStr = SimTime.getString(YearWidth, 0, "_");
+      std::string SimTimeStr = FileTime.getString(YearWidth, 0, "_");
       Outfile.replace(Pos, 8, SimTimeStr);
    }
 
