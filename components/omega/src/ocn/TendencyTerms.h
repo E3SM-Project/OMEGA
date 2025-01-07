@@ -228,6 +228,7 @@ class VelocityHyperDiffOnEdge {
    bool Enabled;
 
    Real ViscDel4;
+   Real DivFactor;
 
    /// Constructor declaration
    VelocityHyperDiffOnEdge(const HorzMesh *Mesh);
@@ -252,7 +253,8 @@ class VelocityHyperDiffOnEdge {
       for (int KVec = 0; KVec < VecLength; ++KVec) {
          const I4 K = KStart + KVec;
          const Real Del2U =
-             ((Del2DivCell(ICell1, K) - Del2DivCell(ICell0, K)) * DcEdgeInv -
+             (DivFactor * (Del2DivCell(ICell1, K) - Del2DivCell(ICell0, K)) *
+                  DcEdgeInv -
               (Del2RVortVertex(IVertex1, K) - Del2RVortVertex(IVertex0, K)) *
                   DvEdgeInv);
 

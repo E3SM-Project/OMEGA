@@ -196,6 +196,13 @@ int Tendencies::readTendConfig(Config *TendConfig ///< [in] Tendencies subconfig
       return ViscDel4Err;
    }
 
+   I4 DivFactorErr =
+       TendConfig->get("DivFactor", this->VelocityHyperDiff.DivFactor);
+   if (DivFactorErr != 0 && this->VelocityHyperDiff.Enabled) {
+      LOG_CRITICAL("Tendencies: DivFactor not found in TendConfig");
+      return DivFactorErr;
+   }
+
    I4 TrHAdvErr = TendConfig->get("TracerHorzAdvTendencyEnable",
                                   this->TracerHorzAdv.Enabled);
    if (TrHAdvErr != 0) {

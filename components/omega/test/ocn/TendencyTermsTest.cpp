@@ -590,6 +590,10 @@ int testVelHyperDiff(int NVertLevels, Real RTol) {
    if (Err != 0) {
       LOG_CRITICAL("Tendencies: ViscDel4 not found in TendConfig");
    }
+   Err = TendConfig.get("DivFactor", VelHyperDiffOnE.DivFactor);
+   if (Err != 0) {
+      LOG_CRITICAL("Tendencies: DivFactor not found in TendConfig");
+   }
    const Real ViscDel4 = VelHyperDiffOnE.ViscDel4;
 
    // Compute exact result
