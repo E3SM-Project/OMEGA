@@ -76,9 +76,9 @@ enum FileFmt {
 
 /// File operations
 enum Mode {
-   ModeUnknown, /// Unknown or undefined
-   ModeRead,    /// Read  (input)
-   ModeWrite,   /// Write (output)
+   ModeRead  = PIO_NOWRITE, /// Read  (input)
+   ModeWrite = PIO_WRITE,   /// Write (output) or ReadWrite (modify/append)
+   ModeUnknown,             /// Unknown or undefined
 };
 
 /// Behavior (for output files) when a file already exists
@@ -274,19 +274,24 @@ int readArray(void *Array,                ///< [out] array to be read
               int Size,                   ///< [in] local size of array
               const std::string &VarName, ///< [in] name of variable to read
               int FileID,                 ///< [in] ID of open file to read from
-              int DecompID, ///< [in] decomposition ID for this var
-              int &VarID    ///< [out] variable ID in case metadata needed
+              int DecompID,  ///< [in] decomposition ID for this var
+              int &VarID,    ///< [out] variable ID in case metadata needed
+              int Frame = -1 ///< [in] opt frame if multiple time slices
 );
 
 /// Reads a non-distributed variable. We use a void pointer here to create
 /// a generic interface for all types. Arrays are assumed to be in contiguous
 /// storage so the arrays of any dimension are treated as a 1-d array with
 /// the full local size. The routine returns the variable as well as the id
-/// assigned to the variable should that be needed later.
+/// assigned to the variable should that be needed later. For time-dependent
+/// variables, the optional frame and dimension length information must be
+/// provided
 int readNDVar(void *Variable,             ///< [out] variable to be read
               const std::string &VarName, ///< [in] name of variable to read
               int FileID,                 ///< [in] ID of open file to read from
-              int &VarID ///< [out] variable ID in case metadata needed
+              int &VarID,     ///< [out] variable ID in case metadata needed
+              int Frame = -1, ///< [in] opt frame if multiple time slices
+              std::vector<int> *DimLengths = nullptr ///< [in] opt dim lengths
 );
 
 /// Writes a distributed array. A void pointer is used to create a generic
@@ -298,16 +303,21 @@ int writeArray(void *Array,     ///< [in] array to be written
                void *FillValue, ///< [in] value to use for missing entries
                int FileID,      ///< [in] ID of open file to write to
                int DecompID,    ///< [in] decomposition ID for this var
-               int VarID        ///< [in] variable ID assigned by defineVar
+               int VarID,       ///< [in] variable ID assigned by defineVar
+               int Frame = -1   ///< [in] opt current frame/slice for multiframe
 );
 
 /// Writes a non-distributed variable. A void pointer is used for a generic
 /// interface. Arrays are assumed to be in contiguous storage and the variable
 /// must have a valid ID assigned by the defineVar function. A void pointer
-/// to a scalar FillValue is also required to fill missing values.
+/// to a scalar FillValue is also required to fill missing values. For time-
+/// dependent fields, the optional Frame and Dimension length arguments must
+/// be provided.
 int writeNDVar(void *Variable, ///< [in] variable to be written
                int FileID,     ///< [in] ID of open file to write to
-               int VarID       ///< [in] variable ID assigned by defineVar
+               int VarID,      ///< [in] variable ID assigned by defineVar
+               int Frame = -1, ///< [in] opt current frame/slice for multiframe
+               std::vector<int> *DimLengths = nullptr ///< [in] opt dim lengths
 );
 
 } // end namespace IO

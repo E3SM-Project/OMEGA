@@ -14,6 +14,7 @@
 #include "mpi.h"
 #include "pio.h"
 
+#include <filesystem>
 #include <map>
 #include <string>
 
@@ -270,9 +271,17 @@ int openFile(
          break;
 
       // If the write should append or add to an existing file
-      // we open the file for writing
+      // we open the file for reading and writing, but also must create
+      // the file if it doesn't already exist
       case IfExists::Append:
-         Err = PIOc_openfile(SysID, &FileID, &Format, Filename.c_str(), InMode);
+         if (std::filesystem::exists(Filename)) {
+            Err = PIOc_openfile(SysID, &FileID, &Format, Filename.c_str(),
+                                InMode);
+         } else {
+            Err = PIOc_createfile(SysID, &FileID, &Format, Filename.c_str(),
+                                  InMode);
+         }
+
          if (Err != PIO_NOERR)
             LOG_ERROR("IO::openFile: PIO error opening file {} for writing",
                       Filename);
@@ -331,8 +340,7 @@ int getDimFromFile(int FileID, // [in] ID of the file containing dim
    // First get the dimension ID
    Err = PIOc_inq_dimid(FileID, DimName.c_str(), &DimID);
    if (Err != PIO_NOERR) {
-      // Dimension missing in file - return error but let calling routine
-      // decide how to respond
+      LOG_ERROR("PIO error while reading dimension {} ", DimName);
       return Err;
    }
 
@@ -601,7 +609,7 @@ int readMeta(const std::string &MetaName, // [in] name of metadata
 // Defines a variable for an output file. The name and dimensions of
 // the variable must be supplied. An ID is assigned to the variable
 // for later use in the writing of the variable.
-int defineVar(int FileID,                 // [in] ID of the file containing dim
+int defineVar(int FileID,                 // [in] ID of the file containing var
               const std::string &VarName, // [in] name of variable
               IODataType VarType,         // [in] data type for the variable
               int NDims,                  // [in] number of dimensions
@@ -611,10 +619,21 @@ int defineVar(int FileID,                 // [in] ID of the file containing dim
 
    int Err = 0;
 
-   Err = PIOc_def_var(FileID, VarName.c_str(), VarType, NDims, DimIDs, &VarID);
+   // First check to see if the variable exists (if reading or if appending
+   // to an existing file)
+
+   Err = PIOc_inq_varid(FileID, VarName.c_str(), &VarID);
+
+   // If the variable is not found, define the new variable
    if (Err != PIO_NOERR) {
-      LOG_ERROR("IO::defineVar: PIO error while defining variable {}", VarName);
-      Err = -1;
+
+      Err =
+          PIOc_def_var(FileID, VarName.c_str(), VarType, NDims, DimIDs, &VarID);
+      if (Err != PIO_NOERR) {
+         LOG_ERROR("IO::defineVar: PIO error while defining variable {}",
+                   VarName);
+         Err = 1;
+      }
    }
 
    return Err;
@@ -694,7 +713,8 @@ int readArray(void *Array,                // [out] array to be read
               const std::string &VarName, // [in] name of variable to read
               int FileID,                 // [in] ID of open file to read from
               int DecompID,               // [in] decomposition ID for this var
-              int &VarID // [out] Id assigned to variable for later use
+              int &VarID, // [out] Id assigned to variable for later use
+              int Frame   // [in] opt frame if multiple time slices
 ) {
 
    int Err = 0; // default return code
@@ -702,9 +722,16 @@ int readArray(void *Array,                // [out] array to be read
    // Find variable ID from file
    Err = PIOc_inq_varid(FileID, VarName.c_str(), &VarID);
    if (Err != PIO_NOERR) {
-      // Variable not in file. Return error but let calling routine decide
-      // how to respond
+      LOG_ERROR("IO::readArray: Error finding varid for variable {}", VarName);
       return Err;
+   }
+
+   if (Frame != -1) {
+      Err = PIOc_setframe(FileID, VarID, Frame);
+      if (Err != PIO_NOERR) {
+         LOG_ERROR("Error setting frame while reading distributed array");
+         return Err;
+      }
    }
 
    // PIO Read array call to read the distributed array
@@ -724,7 +751,9 @@ int readArray(void *Array,                // [out] array to be read
 int readNDVar(void *Variable,             // [out] array to be read
               const std::string &VarName, // [in] name of variable to read
               int FileID,                 // [in] ID of open file to read from
-              int &VarID // [out] Id assigned to variable for later use
+              int &VarID, // [out] Id assigned to variable for later use
+              int Frame,  // [in] opt frame/slice for multiframe streams
+              std::vector<int> *DimLengths // [in] dim lengths for multiframe
 ) {
 
    int Err = 0; // default return code
@@ -736,11 +765,31 @@ int readNDVar(void *Variable,             // [out] array to be read
       return Err;
    }
 
-   // PIO Read array call to read the distributed array
-   Err = PIOc_get_var(FileID, VarID, Variable);
-   if (Err != PIO_NOERR)
-      LOG_ERROR("IO::readNDVar: Error in SCORPIO get_var for variable {}",
-                VarName);
+   if (Frame != -1) { // time dependent field so must use get_vara
+
+      int NDims = DimLengths->size();
+      // Start and count arguments include the unlimited time dim (Frame)
+      std::vector<PIO_Offset> Start(NDims + 1, 0);
+      std::vector<PIO_Offset> Count(NDims + 1, 0);
+      Start[0] = Frame;
+      Count[0] = 1;
+      for (int IDim = 1; IDim <= NDims; ++IDim) {
+         Count[IDim] = DimLengths->at(IDim - 1);
+      }
+
+      Err = PIOc_get_vara(FileID, VarID, Start.data(), Count.data(), Variable);
+      if (Err != PIO_NOERR)
+         LOG_ERROR("IO::readNDVar: Error in PIO get_vara for variable {}",
+                   VarName);
+
+   } else { // Not a time-dependent field, can use default get_var
+
+      // PIO get call to read non-distributed array
+      Err = PIOc_get_var(FileID, VarID, Variable);
+      if (Err != PIO_NOERR)
+         LOG_ERROR("IO::readNDVar: Error in PIO get_var for variable {}",
+                   VarName);
+   }
 
    return Err;
 
@@ -756,9 +805,18 @@ int writeArray(void *Array,     // [in] array to be written
                void *FillValue, // [in] value to use for missing entries
                int FileID,      // [in] ID of open file to write to
                int DecompID,    // [in] decomposition ID for this var
-               int VarID        // [in] variable ID assigned by defineVar
+               int VarID,       // [in] variable ID assigned by defineVar
+               int Frame        // [in] frame/slice for multiframe streams
 ) {
    int Err = 0;
+
+   if (Frame != -1) {
+      Err = PIOc_setframe(FileID, VarID, Frame);
+      if (Err != PIO_NOERR) {
+         LOG_ERROR("Error setting frame while writing distributed array");
+         return Err;
+      }
+   }
 
    PIO_Offset Asize = Size;
 
@@ -784,18 +842,38 @@ int writeArray(void *Array,     // [in] array to be written
 //------------------------------------------------------------------------------
 // Writes a non-distributed variable. This generic interface uses void pointers.
 // All arrays are assumed to be in contiguous storage and the variable
-// must have a valid ID assigned by the defineVar function.
+// must have a valid ID assigned by the defineVar function. For time-dependent
+// fields, optional arguments for the frame of the unlimited time axis and a
+// vector of dimension lengths must be provided.
 
 int writeNDVar(void *Variable, // [in] variable to be written
                int FileID,     // [in] ID of open file to write to
-               int VarID       // [in] variable ID assigned by defineVar
+               int VarID,      // [in] variable ID assigned by defineVar
+               int Frame,      // [in] frame/slice for multiframe streams
+               std::vector<int> *DimLengths // [in] dimension lengths
 ) {
    int Err = 0;
 
-   Err = PIOc_put_var(FileID, VarID, Variable);
-   if (Err != PIO_NOERR) {
-      LOG_ERROR("Error in PIO writing non-distributed variable");
-      return Err;
+   if (Frame != -1) { // time dependent field so must use put_vara
+      int NDims = DimLengths->size();
+      // Start and count arguments include the unlimited time dim (Frame)
+      std::vector<PIO_Offset> Start(NDims + 1, 0);
+      std::vector<PIO_Offset> Count(NDims + 1, 0);
+      Start[0] = Frame;
+      Count[0] = 1;
+      for (int IDim = 1; IDim <= NDims; ++IDim) {
+         Count[IDim] = DimLengths->at(IDim - 1);
+      }
+
+      Err = PIOc_put_vara(FileID, VarID, Start.data(), Count.data(), Variable);
+      if (Err != PIO_NOERR)
+         LOG_ERROR("Error in PIO put_vara while writing variable");
+
+   } else {
+
+      Err = PIOc_put_var(FileID, VarID, Variable);
+      if (Err != PIO_NOERR)
+         LOG_ERROR("Error in PIO put_var while writing variable");
    }
 
    return Err;
