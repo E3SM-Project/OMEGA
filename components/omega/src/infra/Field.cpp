@@ -55,8 +55,9 @@ int Field::init(const Clock *ModelClock // [in] default model clock
    CalendarKind CalKind     = Calendar::getKind();
    std::string CalName      = CalendarCFName[CalKind];
    std::vector<std::string> DimNames; // empty dim names vector
-   std::shared_ptr<Field> TimeField = create("time", "time", UnitString, "time",
-                                             0.0, 1.e20, -9.99e30, 0, DimNames);
+   std::shared_ptr<Field> TimeField =
+       create("time", "time", UnitString, "time", 0.0, 1.e20, -9.99e30, 0,
+              DimNames, true, true);
    TimeField->addMetadata("calendar", CalName);
 
    return Err;
@@ -91,7 +92,8 @@ Field::create(const std::string &FieldName,   // [in] Name of variable/field
               const std::any FillValue, // [in] scalar for undefined entries
               const int NumDims,        // [in] number of dimensions
               const std::vector<std::string> &Dimensions, // [in] dim names
-              bool TimeDependent // [in] flag for time dependent field
+              bool TimeDependent,  // [in] flag for time dependent field
+              bool RetainPrecision // [in] flag to retain full prec in IO
 ) {
 
    // Check to make sure a field of that name has not already been defined
@@ -130,6 +132,10 @@ Field::create(const std::string &FieldName,   // [in] Name of variable/field
 
    // Set the time-dependent flag
    ThisField->TimeDependent = TimeDependent;
+
+   // Set the flag to retain full precision in IO operations even
+   // if reduced precision for the stream/file is requested
+   ThisField->RetainPrecision = RetainPrecision;
 
    // Number of dimensions for the field
    ThisField->NDims = NumDims;
@@ -340,6 +346,11 @@ bool Field::isTimeDependent() const { return TimeDependent; }
 // is entirely local. This is needed to determine whether a parallel IO or
 // a non-distributed IO will be used.
 bool Field::isDistributed() const { return Distributed; }
+
+//------------------------------------------------------------------------------
+// Determinse whether full precision should be retained in IO operations
+// when reduced precision for the stream/file is requested
+bool Field::retainPrecision() const { return RetainPrecision; }
 
 //------------------------------------------------------------------------------
 // Returns a vector of dimension names associated with each dimension

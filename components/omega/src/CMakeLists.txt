@@ -49,6 +49,7 @@ target_link_libraries(
     metis
     gptl
     pacer
+    stdc++fs
 )
 
 if(GKlib_FOUND)

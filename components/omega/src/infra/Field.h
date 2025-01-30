@@ -72,6 +72,10 @@ class Field {
    /// or whether it is entirely local
    bool Distributed;
 
+   /// Flag for whether full precision needs to be maintained in IO
+   /// operations when reduced precision is requested
+   bool RetainPrecision;
+
    /// Data attached to this field. This will be a pointer to the Kokkos
    /// array holding the data. We use a void pointer to manage all the
    /// various types and cast to the appropriate type when needed.
@@ -110,7 +114,8 @@ class Field {
           const std::any FillValue,       ///< [in] scalar for undefined entries
           const int NumDims,              ///< [in] number of dimensions
           const std::vector<std::string> &Dimensions, ///< [in] dim names
-          const bool TimeDependent = true ///< [in] opt flag for unlim time
+          const bool TimeDependent   = true, ///< [in] opt flag for unlim time
+          const bool RetainPrecision = false ///< [in] opt flag for full prec
    );
 
    //---------------------------------------------------------------------------
@@ -200,6 +205,10 @@ class Field {
    /// local. This is needed to determine whether IO uses parallel read/write
    /// or an undistributed read/write.
    bool isDistributed() const;
+
+   /// Determine whether full precision should be maintained in cases where
+   /// a reduced precision stream is requested.
+   bool retainPrecision() const;
 
    //---------------------------------------------------------------------------
    // Metadata functions

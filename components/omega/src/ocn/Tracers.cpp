@@ -43,8 +43,6 @@ I4 Tracers::init() {
 
    I4 Err = 0;
 
-   LOG_INFO("Tracers::init() called");
-
    // Retrieve mesh cell/edge/vertex totals from Decomp
    HorzMesh *DefHorzMesh = HorzMesh::getDefault();
 
@@ -245,8 +243,6 @@ I4 Tracers::define(const std::string &Name, const std::string &Description,
 // Deallocate tracer arrays
 //---------------------------------------------------------------------------
 I4 Tracers::clear() {
-
-   LOG_INFO("Tracers::clear() called");
 
    // Deallocate memory for tracer arrays
    TracerArrays.clear();
